@@ -1,33 +1,31 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const path = require('path'); // Added for better path handling
 
 const app = express();
 app.use(cors());
 app.use(express.json());
-app.use(express.static(__dirname));
+
+// Vercel serves static files from the 'public' folder by default
+// if you follow the project structure I gave you earlier.
+app.use(express.static(path.join(__dirname, '../public')));
 
 app.post('/api/generate', async (req, res) => {
-    console.log("\n--- New Request ---");
-    console.log("Niche:", req.body.niche);
-
-    // These IDs are the most stable "Public" free models on OpenRouter
     const models = [
-        "openrouter/free",              // 🏆 The #1 choice: Auto-selects active free models
-        "google/gemini-2.0-flash:free", // Extremely high uptime
-        "meta-llama/llama-3.3-70b-instruct:free",
-        "mistralai/mistral-small-24b-instruct-2501:free"
+        "openrouter/free",
+        "google/gemini-2.0-flash:free",
+        "meta-llama/llama-3.3-70b-instruct:free"
     ];
 
     let lastError = null;
 
     for (const model of models) {
         try {
-            console.log(`Trying: ${model}...`);
-
-            // Abort if the model takes more than 8 seconds
+            // REDUCED TIMEOUT: Vercel free tier limit is 10s total.
+            // We give each model 4s so we can try at least two.
             const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), 8000);
+            const timeout = setTimeout(() => controller.abort(), 4000);
 
             const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
                 method: "POST",
@@ -35,17 +33,14 @@ app.post('/api/generate', async (req, res) => {
                 headers: {
                     "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
                     "Content-Type": "application/json",
-                    "HTTP-Referer": "http://localhost:3000",
-                    "X-Title": "Spark AI Local"
+                    "HTTP-Referer": "https://spark-ai.vercel.app", // Use your real URL
+                    "X-Title": "Spark AI"
                 },
                 body: JSON.stringify({
                     "model": model,
                     "messages": [
-                        {
-                            "role": "system",
-                            "content": "Return ONLY a valid JSON object. No intro. Format: {\"name\":\"App Name\", \"pitch\":\"1 sentence\", \"features\":[\"1\",\"2\",\"3\"]}"
-                        },
-                        { "role": "user", "content": `Generate a startup app idea for the niche: ${req.body.niche}` }
+                        { "role": "system", "content": "Return ONLY JSON: {\"name\":\"\", \"pitch\":\"\", \"features\":[]}" },
+                        { "role": "user", "content": `Niche: ${req.body.niche}` }
                     ]
                 })
             });
@@ -54,7 +49,6 @@ app.post('/api/generate', async (req, res) => {
             const data = await response.json();
 
             if (data.error) {
-                console.warn(`❌ ${model} failed: ${data.error.message}`);
                 lastError = data.error.message;
                 continue;
             }
@@ -62,21 +56,17 @@ app.post('/api/generate', async (req, res) => {
             let content = data.choices[0].message.content;
             content = content.replace(/```json/g, "").replace(/```/g, "").trim();
 
-            try {
-                JSON.parse(content); // Test if it's valid JSON
-                data.choices[0].message.content = content;
-                console.log(`✅ Success with ${model}!`);
-                return res.json(data);
-            } catch (jsonErr) {
-                console.warn(`⚠️ ${model} sent bad JSON, trying next...`);
-                continue;
-            }
+            JSON.parse(content);
+            return res.json({ content: JSON.parse(content) });
 
         } catch (error) {
-            console.error(`Skipping ${model} due to error:`, error.message);
             lastError = error.message;
+            if (error.name === 'AbortError') console.log(`${model} timed out.`);
         }
     }
 
-    res.status(500).json({ error: `All models failed. Last error: ${lastError}` });
+    res.status(500).json({ error: `Connection too slow or models busy. Error: ${lastError}` });
 });
+
+// IMPORTANT FOR VERCEL: Export the app, don't use app.listen()
+module.exports = app;
