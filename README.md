@@ -2,7 +2,7 @@
 
 Stop staring at a blank screen. Generate your next million-dollar app idea in seconds using high-reasoning AI models.
 
-![Spark AI Preview](https://your-vercel-url.com/preview.png)
+![Spark AI Preview](https://spark-ai-sigma-one.vercel.app/preview.png)
 
 ## 🚀 Features
 - **AI-Powered Ideation:** Leverages OpenRouter's 2026 Free Tier (Gemini 3 Flash & GPT-OSS).
